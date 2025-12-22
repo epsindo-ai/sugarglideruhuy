@@ -1,0 +1,58 @@
+server {
+    listen 443 ssl;
+    server_name _;
+
+    ssl_certificate     /etc/nginx/certs/server.crt;
+    ssl_certificate_key /etc/nginx/certs/server.key;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    # =====================
+    # EPSAIFLOW FRONTEND
+    # https://IP/
+    # =====================
+    location / {
+        proxy_pass http://epsaiflow-ui:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    # =====================
+    # API
+    # https://IP/api/
+    # =====================
+    location /api/ {
+        proxy_pass http://containermgmt-api:8000/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
+
+    # =====================
+    # FLOWER
+    # https://IP/flower/
+    # =====================
+    location /flower/ {
+        proxy_pass http://flower:5555/;
+        proxy_set_header Host $host;
+    }
+
+    # =====================
+    # DBGATE
+    # https://IP/dbgate/
+    # =====================
+    location /dbgate/ {
+        proxy_pass http://dbgate:3000/;
+        proxy_set_header Host $host;
+    }
+}
+
+# Optional redirect HTTP → HTTPS
+server {
+    listen 80;
+    return 301 https://$host$request_uri;
+}
