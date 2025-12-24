@@ -1,0 +1,221 @@
+version: '3.9'
+
+services:
+  containermgmt-db:
+    image: ghcr.io/epsindo-ai/containermgmt-postgres:16-alpine-v1.02-excel-itdel
+    container_name: containermgmt-db
+    ports:
+      - 38432:5432
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: epsindo123
+      POSTGRES_DB: containermgmt
+    volumes:
+      - ./data/postgres103:/var/lib/postgresql/data
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 512m
+
+  containermgmt-api:
+    image: ghcr.io/epsindo-ai/container-mgmt-api:py3.10-excel-itdelb200
+    container_name: containermgmt-api
+    working_dir: /app
+    ports:
+      - 38800:8000
+    environment:
+      DB_HOST: containermgmt-db
+      DB_PORT: 5432
+      DB_USER: admin
+      DB_PASSWORD: epsindo123
+      DB_NAME: containermgmt
+      PARAMIKO_HOSTNAME: 172.22.22.24
+      PARAMIKO_USERNAME: deladmin
+      PARAMIKO_PASSWORD: 123
+      PARAMIKO_PORT: 22
+      PROMETHEUS_URL: http://172.22.22.24:9090
+      MIG_FILES_PATH_ENV: /home/deladmin/appdeployment/epsaiflow/be/
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      SUPERADMIN_NAME: superadmin
+      SUPERADMIN_EMAIL: example@example.com
+      SUPERADMIN_PASSWORD: superadmin123
+      SUPERADMIN_ROLE: super_admin
+      GPU_MAP: |
+        {
+         "0": "GPU-7335d31c-25f7-d9a5-0646-5146eb5a70f0",
+         "1": "GPU-005f2699-3ec7-5f23-4ac8-835a6921cedc",
+         "2": "GPU-8e2998c4-e689-6a85-21c7-63c7488ba140",
+         "3": "GPU-e0b4fdcb-302b-1003-fc99-7c5f6690ebba",
+         "4": "GPU-b742fb2f-f927-7aea-d9e0-278b90795964",
+         "5": "GPU-ec44e70f-d5e8-9a86-f298-4db8f67a924c",
+         "6": "GPU-5e493eae-0ba4-12f0-b788-e8ef21924eff",
+         "7": "GPU-1cfcec1b-b555-fd84-1503-ee14dac06ca5"
+        }
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./mig_configs_file:/app/mig_configs_file
+      - /raid:/raid:ro
+    depends_on:
+      - containermgmt-db
+      - redis
+    command:
+      - "uvicorn"
+      - "main:app"
+      - "--host=0.0.0.0"
+      - "--port=8000"
+      - "--workers=3"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+
+  containermgmt-build-worker:
+    image: ghcr.io/epsindo-ai/container-mgmt-api:py3.10-excel-itdelb200
+    container_name: containermgmt-build-worker
+    working_dir: /app
+    command: ["celery", "-A", "tasks", "worker", "--loglevel=info", "-Q", "build,pull", "-n", "build_worker","--concurrency=1"]
+    environment:
+      DB_HOST: containermgmt-db
+      DB_PORT: 5432
+      DB_USER: admin
+      DB_PASSWORD: epsindo123
+      DB_NAME: containermgmt
+      PARAMIKO_HOSTNAME: 172.22.22.24
+      PARAMIKO_USERNAME: deladmin
+      PARAMIKO_PASSWORD: 123
+      PARAMIKO_PORT: 22
+      PROMETHEUS_URL: http://172.22.22.24:9090
+      MIG_FILES_PATH_ENV: /home/deladmin/appdeployment/epsaiflow/be/
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./mig_configs_file:/app/mig_configs_file
+      - /raid:/raid:ro
+    depends_on:
+      - containermgmt-db
+      - redis
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 6G
+
+  containermgmt-hardware-worker:
+    image: ghcr.io/epsindo-ai/container-mgmt-api:py3.10-excel-itdelb200
+    container_name: containermgmt-hardware-worker
+    working_dir: /app
+    command: ["celery", "-A", "tasks_hardware_spec", "worker", "--loglevel=info", "-Q", "hardware", "-n", "hardware_worker","--concurrency=1", "--max-tasks-per-child=50"]
+    environment:
+      DB_HOST: containermgmt-db
+      DB_PORT: 5432
+      DB_USER: admin
+      DB_PASSWORD: epsindo123
+      DB_NAME: containermgmt
+      PARAMIKO_HOSTNAME: 172.22.22.24
+      PARAMIKO_USERNAME: deladmin
+      PARAMIKO_PASSWORD: 123
+      PARAMIKO_PORT: 22
+      PROMETHEUS_URL: http://172.22.22.24:9090
+      MIG_FILES_PATH_ENV: /home/deladmin/appdeployment/epsaiflow/be/
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./mig_configs_file:/app/mig_configs_file
+      - /raid:/raid:ro
+    depends_on:
+      - containermgmt-db
+      - redis
+    restart: always
+    deploy:
+     resources:
+       limits:
+        cpus: '3'
+        memory: 8G
+
+  redis:
+    image: redis:7-alpine
+    container_name: containermgmt-redis
+    ports:
+      - 38301:6379
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  dbgate:
+    image: dbgate/dbgate:latest
+    container_name: dbgate
+    ports:
+      - 38300:3000
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  flower:
+    image: mher/flower
+    container_name: containermgmt-flower
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    ports:
+      - 38355:5555
+    depends_on:
+      - redis
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  containermgmt-beat:
+    image: ghcr.io/epsindo-ai/container-mgmt-api:py3.10-excel-itdelb200
+    container_name: containermgmt-beat
+    working_dir: /app
+    command: ["celery", "-A", "tasks_hardware_spec", "beat", "--loglevel=info"]
+    environment:
+      DB_HOST: containermgmt-db
+      DB_PORT: 5432
+      DB_USER: admin
+      DB_PASSWORD: epsindo123
+      DB_NAME: containermgmt
+      PARAMIKO_HOSTNAME: 172.22.22.24
+      PARAMIKO_USERNAME: deladmin
+      PARAMIKO_PASSWORD: 123
+      PARAMIKO_PORT: 22
+      PROMETHEUS_URL: http://172.22.22.24:9090
+      MIG_FILES_PATH_ENV: /home/deladmin/appdeployment/epsaiflow/be/
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./mig_configs_file:/app/mig_configs_file
+      - /raid:/raid:ro
+    depends_on:
+      - redis
+      - containermgmt-api
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  epsaiflow-ui:
+    image: ghcr.io/epsindo-ai/epsaiflow:v1.9.5-epsindo-itdel-b200b
+    container_name: epsaiflow-fe
+    restart: always
+    ports:
+      - "33001:3000"
